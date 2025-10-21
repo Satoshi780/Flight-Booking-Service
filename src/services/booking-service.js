@@ -47,7 +47,14 @@ async function makePayment(data){
 
     // Expiry check: if expired, persist cancellation WITHOUT a transaction, then error out
     if ((currentTime - bookingTime) > 300000) { // 5 minutes in ms
+        // Persist cancellation immediately so it isn't rolled back by any external call failures
         await bookingRepository.update(data.bookingId, { status: CANCELLED });
+        // Best-effort: try to return seats to flight service (don't block cancellation on this)
+        try {
+            await cancelBooking(data.bookingId);
+        } catch (e) {
+            // swallow to ensure we still report expiry; consider logging in a real app
+        }
         throw new AppError('The booking has expired', StatusCodes.BAD_REQUEST);
     }
 
@@ -75,7 +82,34 @@ async function makePayment(data){
         throw error;
     }
 }
-module.exports={
+async function cancelBooking(bookingId) {
+    const transaction = await db.sequelize.transaction();
+    try {
+        const bookingDetails = await bookingRepository.get(bookingId, transaction);
+
+        // Return seats back to flight inventory; use the correct seats count from booking
+        await axios.patch(`${ServerConfig.FLIGHT_SERVICE}/api/v1/flights/${bookingDetails.flightId}/seats`, {
+            seats: Number(bookingDetails.noOfSeats),
+            dec: 0 // dec=0 -> increase seats back
+        });
+
+        // Update booking status to CANCELLED if not already
+        if (bookingDetails.status !== CANCELLED) {
+            await bookingRepository.update(bookingId, { status: CANCELLED }, transaction);
+        }
+
+        await transaction.commit();
+
+    } catch (error) {
+        await transaction.rollback();
+        throw error;
+    }
+}
+
+
+
+module.exports = {
     createBooking,
-    makePayment
+    makePayment,
+    cancelBooking
 }
