@@ -83,9 +83,33 @@ async function makePayment(data){
     }
 }
 async function cancelBooking(bookingId) {
+    // Fetch first to decide whether any work is needed
+    const pre = await bookingRepository.get(bookingId);
+
+    // Never cancel a BOOKED booking
+    if (pre.status === BOOKED) {
+        return { skipped: true, reason: 'BOOKED' };
+    }
+
+    // Idempotent: if already CANCELLED, skip
+    if (pre.status === CANCELLED) {
+        return { skipped: true, reason: 'ALREADY_CANCELLED' };
+    }
+
     const transaction = await db.sequelize.transaction();
     try {
+        // Re-read within the transaction to avoid races
         const bookingDetails = await bookingRepository.get(bookingId, transaction);
+
+        // Double-check status after entering transaction
+        if (bookingDetails.status === BOOKED) {
+            await transaction.rollback();
+            return { skipped: true, reason: 'BOOKED' };
+        }
+        if (bookingDetails.status === CANCELLED) {
+            await transaction.rollback();
+            return { skipped: true, reason: 'ALREADY_CANCELLED' };
+        }
 
         // Return seats back to flight inventory; use the correct seats count from booking
         await axios.patch(`${ServerConfig.FLIGHT_SERVICE}/api/v1/flights/${bookingDetails.flightId}/seats`, {
@@ -93,12 +117,11 @@ async function cancelBooking(bookingId) {
             dec: 0 // dec=0 -> increase seats back
         });
 
-        // Update booking status to CANCELLED if not already
-        if (bookingDetails.status !== CANCELLED) {
-            await bookingRepository.update(bookingId, { status: CANCELLED }, transaction);
-        }
+        // Update booking status to CANCELLED
+        await bookingRepository.update(bookingId, { status: CANCELLED }, transaction);
 
         await transaction.commit();
+        return { skipped: false, status: CANCELLED };
 
     } catch (error) {
         await transaction.rollback();
@@ -107,9 +130,21 @@ async function cancelBooking(bookingId) {
 }
 
 
-
+async function cancelOldBookings(){
+    try{
+        const currentTime=new Date(Date.now()-1000*300); // 5 minutes ago
+        const candidates = await bookingRepository.cancelOldBookings(currentTime);
+        for (const booking of candidates) {
+            await cancelBooking(booking.id);
+        }
+        return { processed: candidates.length };
+    }catch(error){
+        throw error;
+    }
+}
 module.exports = {
     createBooking,
     makePayment,
-    cancelBooking
+    cancelBooking,
+    cancelOldBookings
 }

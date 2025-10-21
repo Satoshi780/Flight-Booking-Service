@@ -5,5 +5,8 @@ module.exports = {
     SuccessResponse: require('./success-response'),
     // provide both UPPERCASE and camelCase exports for compatibility
     ENUMS: enums,
-    Enums: enums
-}
+    Enums: enums,
+    cronJobs: require('../common/cron-jobs'),
+    // Align with usage in src/index.js
+    CRONS: require('../common/cron-jobs')
+};
