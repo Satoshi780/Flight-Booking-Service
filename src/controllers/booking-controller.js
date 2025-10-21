@@ -2,6 +2,7 @@ const { StatusCodes } = require('http-status-codes');
 const {BookingService}=require('../services');
 const {SuccessResponse,ErrorResponse}=require('../utils/common');
 
+const inMemDb = {};
 
 async function createBooking(req,res){
     try{
@@ -25,6 +26,18 @@ async function createBooking(req,res){
 
 async function makePayment(req,res){
     try{
+        const idempotencyKey=req.headers['x-idempotency-key'];
+        if(!idempotencyKey){
+            return res
+            .status(StatusCodes.BAD_REQUEST)
+            .json({message:"Idempotency key missing in the request"});
+        }
+        if(inMemDb[idempotencyKey]){
+            return res
+            .status(StatusCodes.BAD_REQUEST)
+            .json({message:"Idempotency key already used"});
+            
+        }
         // Coerce incoming values to numbers and validate
         const bookingId = Number(req.body.bookingId);
         const userId = Number(req.body.userId);
@@ -44,6 +57,7 @@ async function makePayment(req,res){
             totalCost
         });
         SuccessResponse.data=response;
+        inMemDb[idempotencyKey]=idempotencyKey; // Mark key as used
         return res
         .status(StatusCodes.OK)
         .json(SuccessResponse);
