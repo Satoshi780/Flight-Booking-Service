@@ -1,9 +1,13 @@
-const express=require('express');
+const express = require('express');
 
-const router=express.Router();
-const {InfoController,BookingController }=require('../../controllers');
+const router = express.Router();
+const { InfoController } = require('../../controllers');
+const bookingRoutes = require('./booking');
 
-router.get('/info',InfoController.info);
-router.post('/bookings',BookingController.createBooking);
+// Info route
+router.get('/info', InfoController.info);
 
-module.exports=router;
+// Mount booking routes under /bookings
+router.use('/bookings', bookingRoutes);
+
+module.exports = router;
