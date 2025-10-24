@@ -10,6 +10,7 @@
     "dev": " npx nodemon src/index.js"
   },
   "dependencies": {
+    "amqplib": "^0.10.9",
     "axios": "^1.12.2",
     "dotenv": "^17.2.2",
     "express": "^5.1.0",

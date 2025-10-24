@@ -3,7 +3,7 @@ const {StatusCodes}=require('http-status-codes');
 const {BookingRepository}=require('../repositories');
 const db=require('../models');
 const AppError = require('../utils/errors/app-error');
-const {ServerConfig}=require('../config');
+const {ServerConfig,Queue}=require('../config');
 const {Enums}=require('../utils/common');
 const { BOOKED, CANCELLED } = Enums.BOOKING_STATUS;
 const bookingRepository=new BookingRepository();
@@ -75,6 +75,12 @@ async function makePayment(data){
             { status: BOOKED },
             transaction
         );
+        // Send message to notification service via RabbitMQ
+        Queue.sendData({
+            bookingId: data.bookingId,
+            userId: data.userId,
+            message: `Your booking with id ${data.bookingId} has been successfully confirmed.`
+        });
         await transaction.commit();
         return response;
     } catch (error) {
